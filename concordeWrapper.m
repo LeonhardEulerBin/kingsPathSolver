@@ -64,7 +64,7 @@ fclose(fid);
 % If the above line doesn't work, use the full paths as such: ('wsl concordeDirectory .tspFile'sDirectory')
 %EX: system('wsl
 %/mnt/c/Users/YOUR_USERNAME_HERE/Downloads/concorde/TSP/concorde /mnt/c/Users/YOUR_USERNAME_HERE/Documents/VARIOUS_FOLDER_NAMES/problem.tsp');
-system('/home/rrlewis3/Documents/MATLAB/concorde/TSP/concorde /home/rrlewis3/Documents/MATLAB/MatProjects/Dronez/LaserScanZ/2025LaserScan/MinLatency/problem.tsp');
+system('/home/user/Documents/MATLAB/concorde/TSP/concorde /home/user/Documents/MATLAB/MinLatency/problem.tsp');
 
 %read solution file
 solfile = 'problem.sol';
