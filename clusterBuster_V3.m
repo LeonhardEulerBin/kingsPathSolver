@@ -1,9 +1,10 @@
 clc; clear; format compact; format long g;
-doPlotting = 1; %0 = no plot, 1 = plot, 2 = final plot
+doPlotting = 0; %0 = no plot, 1 = plot, 2 = final plot
 plotSpeed = .01;
 % load nodes
-nodes = load("nodes2KGood.mat").nodes; % nodesJavCluster nodes2KGood
+nodes = load("nodes100K.mat").nodes; % nodesJavCluster nodes2KGood nodes2KBad(weird) nodes5K nodes10K nodes100K nodesM
 % nodes= [nodes(:,2), nodes(:,1)];
+% nodes = [2 1; 3 1; 6 1; 1 2; 2 2; 3 2; 5 2; 1 3; 4 3; 1 4; 3 4; 5 4; 1 5; 2 5; 4 5; 5 5; 2 6; 3 6; 4 6];
 
 %Shift to 1st quadrant
 nodesMinX = min(nodes(:,1))-1;
@@ -35,11 +36,6 @@ end
 [~, topID] = max(nodes(:,2));
 startPoint = nodes(topID,:);
 
-% Initial classification
-% numNeighbor = countNeighbors_fast(nodes, gridMap, 8);
-% intNodes = nodes(numNeighbor==8,:); %change to int nodes being unadded nodes
-% extNodes = nodes(numNeighbor~=8,:); %move calculation into touchTIps()
-
 % ====================================================================================
 % Stage 1: 8 connectivity full wrap (Necessisarily least efficient pathing)
 % ====================================================================================
@@ -63,23 +59,18 @@ end
     % maybe better to prioritize minimizing captive singles (culls of 1 from cutter) (maybe problematic but worth a try)
         % nah, minimize left over 1-connected entry points (ex: 3 options: 1 big overlaps, 1 small, 1 medium. Select medium)
     %!splicer()
-
 %!Neighbor runs (useful for breacher)
-
 %! breachLister()
     %Prioritize corners (2-2+ in 8con) (1-1+ in 4con, less telling), 
         %challenge with double clusters, runLength<numNeigh
     %flag loners? (1-1 in 8con) (0-1 in 4con), may be easier to look at size 1 connectivity groups
     %less than 2 can be ignored for 4add, but important for 8add
-
 %!4add
     % check breach connectivity to consider valid (outside this function when pair chosen)
     %if entry points on opposite clusters try next breach 
     %! Try 4 touchingTips (no shrink wrap so int vs ext doesn't matter, all non-path can be useable int)
     %cut leaves as usual (empty result shouldn't be possible here)
 %!splicer()
-
-
 %! 8add
     % calculate extNodes
     % 8 touchingTips, once no 4adds can be done
@@ -89,10 +80,6 @@ end
     % followed by checking the added segment for possible 4adds
     %if 4adds possible, go to beginning of stage 2, else continue 8adds
 %!splicer()
-
-
-
-
 
 %Stage 2 Loop starts with int nodes correct, grid map needs updating
 % activeMask = []; %skips rechecking path nodes that can no longer connect
@@ -115,10 +102,6 @@ while intNodesLeft>0
         pathLeng = size(path,1);
         [path, gridMap, activeMask] = eater(path, gridMap, activeMask, eatSegs);
     
-        % if doPlotting == 1
-        %     delete(finalPath)
-        %     finalPath = plot(path(:,1),path(:,2),'r');
-        % end
         if pathLeng == size(path,1) %break if none added
             break
         end
@@ -130,55 +113,109 @@ while intNodesLeft>0
     % ===================================
     %breachLister()
     % ===================================
-    [cand4con, cand8con] = breachLister(path, activeMask, numNeighborPath, gridMap); % 100% can be improved/vectorized
+    [cand4con, cand8con, singleCon] = breachLister(path, activeMask, numNeighborPath); % 100% can be improved/vectorized
 
 
     % ===================================
-    %4add
+    %regular adds
     % ===================================
-    if ~isempty(cand4con)
-        for i=1:size(cand4con,1)
-            if cand4con(i,1) == cand4con(i,2)
-                breakPhase = path(cand4con(i,1)-1:cand4con(i,1)+1,:); %needs wrap protection
-            else
-                breakPhase = path(cand4con(i,1)-1:cand4con(i,1)+2,:); %needs wrap protection
+    branchAdded = 0;
+    while branchAdded == 0
+        if ~isempty(cand4con) % primarily add with 4con only
+            for i=1:size(cand4con,1)
+                if cand4con(i,1) == cand4con(i,2)
+                    breakPhase = path(cand4con(i,1)-1:cand4con(i,1)+1,:); %needs wrap protection
+                else
+                    breakPhase = path(cand4con(i,1)-1:cand4con(i,1)+2,:); %needs wrap protection
+                end
+                [newSeg, addedMap]= touchTips(gridMap, breakPhase, 4, 0, 0);
+                newSeg = cutter(newSeg, 1);
+                if ~isempty(newSeg)
+                    newSeg=newSeg(2:end-1,:);
+                    [path, activeMask, gridMap] = pathAdder(path,newSeg, activeMask, cand4con(i,:), gridMap);
+                    branchAdded = 1;
+                    break
+                end
             end
-            [newSeg, addedMap]= touchTips(gridMap, breakPhase, 4, 0, 0);
-            newSeg = cutter(newSeg, 1);
-            if ~isempty(newSeg)
-                newSeg=newSeg(2:end-1,:);
-                [path, activeMask, gridMap] = pathAdder(path,newSeg, activeMask, cand4con(i,:), gridMap);
-                % gridMap = gridMap-addedMap;
-                break
+            if branchAdded == 0
+                cand4con = [];
             end
-        end
-        if doPlotting == 1
-            delete(finalPath)
-            finalPath = plot(path(:,1),path(:,2),'r');
-        end
-    elseif ~isempty(cand8con)
-        for i=1:size(cand8con,1)
-            if cand8con(i,1) == cand8con(i,2)
-                breakPhase = path(cand8con(i,1)-1:cand8con(i,1)+1,:); %needs wrap protection
-            else
-                breakPhase = path(cand8con(i,1)-1:cand8con(i,1)+2,:); %needs wrap protection
+            if doPlotting == 1
+                delete(finalPath)
+                finalPath = plot(path(:,1),path(:,2),'r');
             end
-            [newSeg, addedMap]= touchTips(gridMap, breakPhase, 8, 0, 0);
-            newSeg = cutter(newSeg, 1);
-            if ~isempty(newSeg)
-                newSeg=newSeg(2:end-1,:);
-                [path, activeMask, gridMap] = pathAdder(path,newSeg, activeMask, cand8con(i,:), gridMap);
-                % gridMap = gridMap-addedMap;
-                break
+        elseif ~isempty(cand8con) %if no 4con, bridge into next section via 8con
+            candPts = path(unique([cand8con(:,1);cand8con(:,2)]),:);
+            candIdx = sub2ind(size(gridMap), candPts(:,1), candPts(:,2));
+            gridMap8s = gridMap;
+            gridMap8s(candIdx) = true; %USING PATH INDEX NOT GRID INDEX
+            CC4 = bwconncomp(gridMap8s, 4);
+            labels4 = labelmatrix(CC4);
+            addedClusters=[]; 
+            for i=1:size(cand8con,1)
+                newSegCluster = labels4(path(cand8con(i,1),1),path(cand8con(i,1),2));
+                if ~any(newSegCluster == addedClusters) %add in all disconnected regions (maybe useful to have in 4con too)
+                    if cand8con(i,1) == cand8con(i,2)
+                        breakPhase = path(cand8con(i,1)-1:cand8con(i,1)+1,:); %needs wrap protection
+                    else
+                        breakPhase = path(cand8con(i,1)-1:cand8con(i,1)+2,:); %needs wrap protection
+                    end
+                    [newSeg, addedMap]= touchTips(gridMap, breakPhase, 8, 0, 0);
+                    newSeg = cutter(newSeg, 1);
+                    if ~isempty(newSeg)
+                        newSeg=newSeg(2:end-1,:);
+                        addedClusters = [addedClusters; newSegCluster];
+                        [path, activeMask, gridMap] = pathAdder(path,newSeg, activeMask, cand8con(i,:), gridMap);
+                        cand8con = cand8con+size(newSeg,1);
+                        branchAdded = 1;
+                        if doPlotting == 1
+                            scatter(newSeg(:,1),newSeg(:,2), 'b', "filled")
+                            delete(finalPath)
+                            finalPath = plot(path(:,1),path(:,2),'r');
+                        end
+                        
+                    end
+                end
             end
-        end
-        if doPlotting == 1
-            delete(finalPath)
-            finalPath = plot(path(:,1),path(:,2),'r');
+            if branchAdded == 0
+                cand8con = [];
+            end
+        elseif ~isempty(singleCon) %add in single connections 1 point at a time
+            %this block ignores the 1st cutable repeat node
+            for i=1:size(singleCon,1)
+                if singleCon(i,1) == singleCon(i,2)
+                    breakPhase = path(singleCon(i,1)-1:singleCon(i,1)+1,:); %needs wrap protection
+                else
+                    breakPhase = path(singleCon(i,1)-1:singleCon(i,1)+2,:); %needs wrap protection
+                end
+                [newSeg, addedMap]= touchTips(gridMap, breakPhase, 8, 0, 1);
+                % newSeg = cutter(newSeg, 1);
+                if ~isempty(newSeg)
+                    newSeg=newSeg(2:end-1,:);
+                    [path, activeMask, gridMap] = pathAdder(path,newSeg, activeMask, singleCon(i,:), gridMap);
+                    branchAdded = 1;
+                    break
+                end
+            end
+            if doPlotting == 1
+                delete(finalPath)
+                finalPath = plot(path(:,1),path(:,2),'r');
+            end
+            if branchAdded == 0
+                disp("stalemate: no possible additions")
+            end
         end
     end
+    intNodesLeft=sum(sum(gridMap));
 end
-bees = 2
+
+
+P = path;
+dP = diff(P, 1, 1);   % (n-1)-by-2
+% Euclidean distances between consecutive points
+segment_lengths = sqrt(sum(dP.^2, 2));
+% Total path length
+total_length = sum(segment_lengths)
 
 
 
@@ -276,7 +313,7 @@ debugPlotPause = .001;
 if size(breakPhase,1) == 3 
     startPt = breakPhase(2,:);
     endPt = startPt;
-    prevDir{1} = endPt-breakPhase(1,:);
+    prevDir{1} = breakPhase(1,:)-endPt;
 else
     startPt = breakPhase(2,:);
     endPt = breakPhase(3,:);
@@ -308,89 +345,57 @@ while chiralityFound == 0
         end
     end
 end
-% %reverse finding as instructed
-% if reverseChirality == 1 %maybe move after 1st step
-%     flipChirality = ~flipChirality;
-% end
 %flip chirality as determined
 if flipChirality
     dirs = flipud(dirs);
-end
-
-%8con prep
-if connectivity == 8
-    [mapR, mapC] = find(gridMap);
-    nodes = [mapR mapC];
-    numNeighbor = countNeighbors_fast(nodes, gridMap, 8); %PROBALY A BIG INEFFICINECY TO CHECK ALL NODES ONCE TO AVOID CHECKING ALL NODES ONCE
-    % intNodes = nodes(numNeighbor==8,:); %change to int nodes being unadded nodes
-    nodes = nodes(numNeighbor~=8,:); %set useable nodes as ext only
-
-    %CREATE EXTMAP
-    extMap = false(size(gridMap,1),size(gridMap,2));
-    for i=1:size(nodes,1)
-        extMap(nodes(i,1),nodes(i,2)) = true;
-    end
 end
 
 if connectivity == 4 && ~any(prevDir{1} == 0) %remap 8space to 4space
     % Map 8-direction index → 4-direction index
     % Groups: (1,2)->1, (3,4)->2, (5,6)->3, (7,8)->4
     idx4 = ceil(dir2idx(prevDir{1})/2);
-
     % Wrap just in case
     idx4 = mod(idx4-1,4)+1;
-
     prevDir{1} = dirs(idx4,:);
 end
 
+% Preallocate
 gridSize = size(gridMap);
 n=sum(sum(gridMap));
-
-
-% Preallocate
 subPath{1} = zeros(n,2); subPath{2} = zeros(n,2); 
 ptr(1) = 1; ptr(2) = 1;
 addedMap{1} = zeros(gridSize(1),gridSize(2)); addedMap{2} = addedMap{1};
 subPath{1}(1,:) = startPt; subPath{2}(1,:) = endPt;
 addedMap{1}(startPt(1),startPt(2)) = 1; addedMap{2}(endPt(1),endPt(2)) = 1;
 
-
 % Initialize walkers
-currentPt{1} = startPt;
-currentPt{2} = endPt;
-
-prevDir{1} = prevDir{1};
-prevDir{2} = -prevDir{1};
-
-subDirs{1} = dirs;
-subDirs{2} = flipud(dirs);
-
+currentPt{1} = startPt; currentPt{2} = endPt;
+prevDir{1} = prevDir{1}; prevDir{2} = -prevDir{1};
+subDirs{1} = dirs; subDirs{2} = flipud(dirs);
 connectingPt = [];
 
 %POTENTIALLY USEFUL
 CC = bwconncomp(gridMap, connectivity);
 labels = labelmatrix(CC);
 disconnected=0;
-
+diags{1}=[];
 if doTip2Tip == 1
     branches = 1;
 else 
     branches = 2;
+    diags{2}=[];
 end
-moved = false(branches);
-
+moved = false(branches,1);
 while true
-    % ==========
-    % WALKER
-    % ==========
+    % ========================================
+    % Walker
+    % ========================================
     for branNum = 1:branches
         if ptr(branNum) == 2 && reverseChirality == 1
             subDirs{branNum} = flipud(subDirs{branNum});
         end
         prevDirIdx = find(subDirs{branNum}(:,1)==prevDir{branNum}(1) & subDirs{branNum}(:,2)==prevDir{branNum}(2),1);
-    
         moved(branNum) = false;
-    
         for step = 1:connectivity
             dirIdx = mod(prevDirIdx + step - 1, connectivity) + 1;
             d = subDirs{branNum}(dirIdx,:);
@@ -398,10 +403,13 @@ while true
             if cand(1) < 1 || cand(1) > gridSize(1) || cand(2) < 1 || cand(2) > gridSize(2) %Check if outside map
                 continue
             end    
-            if gridMap(cand(1),cand(2)) ~= 0
-                ptr(branNum) = ptr(branNum) + 1;
-                subPath{branNum}(ptr(branNum),:) = cand;
-                if debugPlotting == 1
+            if gridMap(cand(1),cand(2)) ~= 0 %if valid
+                ptr(branNum) = ptr(branNum) + 1; %log new length
+                subPath{branNum}(ptr(branNum),:) = cand; %add candidate to subpath
+                if connectivity == 8 && (cand(1) ~= currentPt{branNum}(1,1)) && (cand(2) ~= currentPt{branNum}(1,2)) %if diag move
+                    diags{branNum} = [diags{branNum};ptr(branNum)];
+                end
+                if debugPlotting == 1 %plot new segment
                     plot([subPath{branNum}(ptr(branNum)-1,1);subPath{branNum}(ptr(branNum),1)],[subPath{branNum}(ptr(branNum)-1,2);subPath{branNum}(ptr(branNum),2)],'b') %Temp plot check 1
                     pause(debugPlotPause)
                 end
@@ -414,9 +422,9 @@ while true
                 if addedMap{branNum}(cand(1),cand(2)) == 0
                     addedMap{branNum}(cand(1),cand(2)) = ptr(branNum);
                 end
-                prevDir{branNum} = -d;
-                currentPt{branNum} = cand;
-                moved(branNum) = true;
+                prevDir{branNum} = -d; %set new previous direction
+                currentPt{branNum} = cand; %set new current point
+                moved(branNum) = true; %log that movement was successful
                 break
             end
             if ~moved(branNum) && step == connectivity % break if unable to move
@@ -429,15 +437,13 @@ while true
             break
         end
     end
-
     % Safety
     if branches == 2
         if ~moved(1) && ~moved(2)
             break
         end
-    
         %Connectivity check
-        if ptr(1) == 2 && labels(subPath{1}(2,1),subPath{1}(2,2)) ~= labels(subPath{2}(2,1),subPath{2}(2,2))
+        if ptr(1) == 2 && labels(subPath{1}(2,1),subPath{1}(2,2)) ~= labels(subPath{2}(ptr(2),1),subPath{2}(ptr(2),2))
             disconnected =1;
             break
         end
@@ -445,7 +451,6 @@ while true
     if ~isempty(connectingPt)
         break
     end
-
 end
 
 if disconnected == 1
@@ -471,30 +476,29 @@ else
         path = subPath{1};
         addedMap = (addedMap{1}>0);
     end
-    
-    
-    % SHRINK WRAP
+    %Shrink Wrap
     if connectivity==8
-        compMap = extMap - addedMap;
-        compMap(startPt(1),startPt(2)) = false;
-        compMap(endPt(1),endPt(2)) = false;
-        unusedIdx = find(compMap); %DOESN"T FACTOR IN START AND END PTS PROPERLY, do this up higher somewhere
-        
-        [row, col] = ind2sub(size(extMap), unusedIdx);
-    
-        for u=1:length(unusedIdx)
-            p = [row(u), col(u)]; 
-    
-            for k=1:length(path)-1
-                a = path(k,:);
-                b = path(k+1,:);
-    
-                if abs(b(1)-a(1))==1 && abs(b(2)-a(2))==1
-                    if sum(abs(p-a))==1 && sum(abs(p-b))==1
-                        path = [path(1:k,:); [row(u), col(u)]; path(k+1:end,:)];
-                        addedMap(row(u), col(u))=true;
+        if branches == 2
+            diags2 = abs(diags{2}-max(diags{2})-1)+max(diags{1});
+            diags = [diags{1}; diags2];
+        else
+            diags = diags{1}; %logs the 2nd pt in a diagonal
+        end
+        for u=1:length(diags)
+            k=diags(u)-1;
+            a = path(diags(u),:);
+            b = path(diags(u)-1,:);
+            
+            if sum(abs(a-b))==2 %if diag
+                diagCand = [a(1,1) b(1,2); b(1,1) a(1,2)];
+                for j=1:2
+                    if gridMap(diagCand(j,1), diagCand(j,2)) && ~addedMap(diagCand(j,1), diagCand(j,2))
+                        path = [path(1:k,:); diagCand(j,:); path(k+1:end,:)]; 
+                        addedMap(diagCand(j,1), diagCand(j,2))=true;
+                        diags = diags+1;
                         break
                     end
+                    
                 end
             end
         end
@@ -549,26 +553,44 @@ end
 end
 
 function eatSegs = eatable(path,gridMap,activeMask, numNeighborPath) %Begging for a ChatGPT efficiency overhaul
+debugPlotting = 0;
 n = size(path,1);
 augPath = [path; path(1:2,:)];
 straightSegs = [];
 diagSegs = [];
 R = [0 -1 ; 1 0];
 R3 = -R;
+if debugPlotting == 1
+    homePlot = scatter(0,0,'g','filled');
+    checkPlot = scatter(0,0,'r','filled');
+end
 for i = find(activeMask)'
     % if numNeighborPath(mod(i,n)+1) ~= 5 && numNeighborPath(mod(i-2,n)+1) ~= 5
     homePt = path(i,:);
-    a = path(i,:); %NEEDS CHECK FOR EDGES
-    b = augPath(i+2,:); %check around corner
-    c= min(abs(b-a));
-    if c == 1 %ideal case
+    if debugPlotting == 1
+        delete(homePlot)
+        homePlot = scatter(homePt(1,1),homePt(1,2),'g','filled');
+    end
+    % if all(homePt == [103 38])
+    %     bees = 2
+    % end
+    a = path(mod(i-3,n)+1,:); %two back
+    b = path(mod(i+1,n)+1,:); %two forward, check around corner
+    c= min(abs(b-homePt));
+    d = min(abs(a-homePt));
+    if c || d %ideal case
         for conPt = -1:2:1
             % look forward
             candInd = i+conPt;
-            dir = path(candInd,:) - path(i,:);
+            dir = path(mod(candInd-1,n)+1,:) - path(i,:);
             checkPt(1,:) = homePt + 2*dir;
             checkPt(2,:) = homePt + dir*R;
             checkPt(3,:) = homePt + dir*R3;
+            if debugPlotting == 1
+                delete(checkPlot)
+                checkPlot = scatter(checkPt(:,1),checkPt(:,2),'r','filled');
+                pause(.001)
+            end
     
             for j=1:3
                 try
@@ -588,6 +610,10 @@ for i = find(activeMask)'
         % diagSegs = [diagSegs; i, candInd];
     end
     % end
+end
+if debugPlotting == 1
+    delete(homePlot)
+    delete(checkPlot)
 end
 eatSegs = [straightSegs; diagSegs];
 end
@@ -631,8 +657,8 @@ numPtsAdded=0;
 for i=1:size(valSeg,2)
     breakIDs(1,1) = min(eatSegs(i,:));
     breakIDs(1,2) = breakIDs(1,1)+1;
-    [path, activeMask, gridMap] = pathAdder(path,valSeg{i}, activeMask, breakIDs+numPtsAdded, gridMap);
-    numPtsAdded = numPtsAdded + size(valSeg{i},1);
+    [path, activeMask, gridMap] = pathAdder(path,valSeg{i}(2:end-1,:), activeMask, breakIDs+numPtsAdded, gridMap);
+    numPtsAdded = numPtsAdded + size(valSeg{i},1)-2;
     % plot(path(:,1),path(:,2),'r');
 end
 end
@@ -719,6 +745,10 @@ end
 
 
 function [path, activeMask, gridMap] = pathAdder(path,newSeg, activeMask, breakIDs, gridMap)
+if ismember(([104 40]),newSeg,"rows") %DEBUG BOCK
+    bees = sum(ismember(newSeg,([104 40]),"rows"))
+end
+
 newSegLeng = size(newSeg,1);
 if breakIDs(2) == 1
     path(end+1:end+newSegLeng,:) = newSeg;
@@ -730,9 +760,18 @@ end
 % gridMap(newSeg(:,1),newSeg(:,2)) = false;
 idx = sub2ind(size(gridMap), newSeg(:,1), newSeg(:,2)); %CHECK LATER TO SEE IF THESE INDICES ARE RETREIVABLE WITHOUT SUB2IND
 gridMap(idx) = false;
+
+debugRepeats =1;%DEBUG BOCK
+if debugRepeats == 1
+    Pshifted = [path(end,:); path(1:end-1,:)];
+    repeated = all(path == Pshifted, 2);
+    if any(repeated(2:end))
+        bees = 5;
+    end
+end
 end
 
-function [cand4con, cand8con] = breachLister(path, activeMask, numNeighborPath, gridMap) %INCOMPLETE
+function [cand4con, cand8con, singleCon] = breachLister(path, activeMask, numNeighborPath) %INCOMPLETE
 %path = full path
 %activeMask = list of possible path points
 %numNeighborPath = number of continuous neighbors in 8-con
@@ -744,6 +783,7 @@ function [cand4con, cand8con] = breachLister(path, activeMask, numNeighborPath, 
 pathLeng = size(path,1);
 cand4con = [];
 cand8con = [];
+singleCon = [];
 for i = find(activeMask)'
     nextInd = mod(i,pathLeng)+1;
     if activeMask(nextInd) %if next neigh is also valid
@@ -755,7 +795,7 @@ for i = find(activeMask)'
             cand8con = [cand8con;i, nextInd];
         end
     elseif ~activeMask(mod(i-2,pathLeng)+1) % previous invalid (1 pt entry)
-        cand8con = [cand8con;i, i];
+        singleCon = [singleCon;i, i];
     end
 end
 % breachList = [cand4con; cand8con];
@@ -765,43 +805,29 @@ end
 
 
 
-function [pathCut, cutNodes, cutNodesTrue] = cutter(path, includePt)
-
-[pathUnique, ia, ic] = unique(path,'rows','stable');
-
-if numel(ia)==size(path,1)
+function [pathCut] = cutter(path, includePt)
+[~, ia, ~] = unique(path,'rows','stable');
+if numel(ia)==size(path,1) %if all unique
     pathCut = path;
-    cutNodes=[]; cutNodesTrue=[];
     return
 end
 
 pathCut = path;
-cutNodes=[]; cutNodesTrue=[];
-
 while true
     [~,ia,ic] = unique(pathCut,'rows','stable');
-
     if numel(ia)==size(pathCut,1)
         break
     end
 
     dup = find(histcounts(ic,1:max(ic)+1)>1,1);
     idx = find(ic==dup);
-
     firstID = idx(1);
     lastID  = idx(end);
-
     if includePt
         removeIdx = firstID:(lastID-1);
-        retainingIdx = (firstID+1):(lastID-1);
     else
         removeIdx = firstID:lastID;
-        retainingIdx = [];
     end
-
-    cutNodes = unique([cutNodes; pathCut(removeIdx,:)],'rows','stable');
-    cutNodesTrue = unique([cutNodesTrue; pathCut(retainingIdx,:)],'rows','stable');
-
     pathCut(removeIdx,:)=[];
 end
 end
